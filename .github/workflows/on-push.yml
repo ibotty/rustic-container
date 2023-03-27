@@ -1,0 +1,39 @@
+---
+name: build container on push
+
+env:
+  IMAGE_NAME: quay.io/ibotty/rustic
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  latest_rustic:
+    name: rustic version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_latest_rustic.outputs.version }}
+    steps:
+    - name: Get latest rustic release
+      id: get_latest_rustic
+      shell: bash
+      run: |
+        set -euo pipefail
+        get_latest_github_release() {
+          local url="https://api.github.com/repos/$1/releases/latest"
+          curl -fsSLH 'Accept: application/json' "$url" | jq -cr .tag_name
+        }
+        rustic_version="$(get_latest_github_release rustic-rs/rustic)"
+        echo "discovered  rustic-rs/rustic $rustic_version"
+
+        echo "version=$rustic_version" >> $GITHUB_OUTPUT
+
+  build:
+    name: Trigger build of new image
+    needs: latest_rustic
+    uses: ./.github/workflows/container-build.yml
+    with:
+      tags: latest ${{ needs.latest_rustic.outputs.version }}
+      rustic_version: ${{ needs.latest_rustic.outputs.version }}
+    secrets: inherit

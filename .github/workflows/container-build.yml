@@ -1,0 +1,65 @@
+---
+name: build container
+env:
+  REGISTRY: quay.io/ibotty
+  IMAGE_NAME: rustic
+
+  ARCHS: amd64, arm64
+
+on:
+  workflow_call:
+    inputs:
+      rustic_version:
+        description: 'Rustic Version'
+        required: true
+        type: string
+      parent_image:
+        description: 'Parent image in the Containerfile'
+        default: registry.access.redhat.com/ubi9-micro
+        type: string
+      tags:
+        description: 'Tags to publish, space separated'
+        required: true
+        default: latest
+        type: string
+
+jobs:
+  build:
+    name: build image
+    runs-on: ubuntu-latest
+    steps:
+    - name: clone
+      uses: actions/checkout@v3
+
+    - name: log into registry
+      uses: redhat-actions/podman-login@v1
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ secrets.QUAY_USERNAME }}
+        password: ${{ secrets.QUAY_PASSWORD }}
+
+    - name: set up qemu for multi-arch
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-user-static
+      if: ${{ env.ARCHS != 'amd64' }}
+
+    - name: buildah
+      id: build-image
+      uses: redhat-actions/buildah-build@v2
+      with:
+        image: ${{ env.IMAGE_NAME }}
+        tags: ${{ inputs.tags }}
+        archs: ${{ env.ARCHS }}
+        oci: true
+        containerfiles: ./Containerfile
+        build-args: |
+          RUSTIC_VERSION=${{ inputs.rustic_version }}
+          PARENT_IMAGE=${{ inputs.parent_image }}
+
+    - name: push to registry
+      uses: redhat-actions/push-to-registry@v2
+      with:
+        image: ${{ steps.build-image.outputs.image }}
+        tags: ${{ steps.build-image.outputs.tags }}
+        registry: ${{ env.REGISTRY }}
